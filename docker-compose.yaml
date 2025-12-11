@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: personal-assistant-postgres
+    environment:
+      POSTGRES_DB: personal_assistant
+      POSTGRES_USER: postgres  # Временный superuser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}  # Суперпароль из .env
+      PGDATA: '/var/lib/postgresql/data/pgdata'
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+      - ./init_scripts/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./init_scripts/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres || exit 0"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+    networks:
+      - personal-assistant-network
+
+  init-db:
+    image: postgres:15-alpine
+    container_name: personal-assistant-init-db
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}  # Пароль суперпользователя
+    volumes:
+      - ./scripts:/scripts:ro
+      - ./init_scripts/init_db.sql:/init.sql:ro
+      - ./.env:/app/.env:ro
+    command: >
+      sh -c "
+        echo '🚀 Database initialization...' &&
+        
+        # Ждем PostgreSQL
+        until pg_isready -h postgres -p 5432 -U postgres; do
+          echo 'Waiting for PostgreSQL...';
+          sleep 2;
+        done &&
+        
+        # Загружаем пароли
+        if [ -f /app/.env ]; then
+          source /app/.env
+        fi &&
+        
+        # Создаем пользователя приложения
+        psql -h postgres -U postgres -c \"CREATE USER personal_assistant_app WITH PASSWORD '\${DB_PASSWORD}';\" 2>/dev/null || true &&
+        
+        # Создаем базу данных
+        psql -h postgres -U postgres -c 'CREATE DATABASE personal_assistant;' 2>/dev/null || true &&
+        
+        # Даем права
+        psql -h postgres -U postgres -c 'GRANT ALL PRIVILEGES ON DATABASE personal_assistant TO personal_assistant_app;' &&
+        
+        # Выполняем основной скрипт инициализации от имени пользователя приложения
+        echo '📦 Running schema initialization...' &&
+        PGPASSWORD=\${DB_PASSWORD} psql -h postgres -U personal_assistant_app -d personal_assistant -f /init.sql &&
+        
+        # Создаем readonly пользователя
+        psql -h postgres -U postgres -c \"CREATE USER personal_assistant_readonly WITH PASSWORD '\${READONLY_DB_PASSWORD}';\" 2>/dev/null || true &&
+        psql -h postgres -U postgres -c 'GRANT CONNECT ON DATABASE personal_assistant TO personal_assistant_readonly;' &&
+        psql -h postgres -U postgres -c 'GRANT USAGE ON SCHEMA public TO personal_assistant_readonly;' &&
+        psql -h postgres -U postgres -c 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO personal_assistant_readonly;' &&
+        
+        # Создаем пользователя для DBeaver
+        psql -h postgres -U postgres -c \"CREATE USER dbeaver_user WITH PASSWORD 'dbeaver_dev_123';\" 2>/dev/null || true &&
+        psql -h postgres -U postgres -c 'GRANT CONNECT ON DATABASE personal_assistant TO dbeaver_user;' &&
+        psql -h postgres -U postgres -c 'GRANT USAGE ON SCHEMA public TO dbeaver_user;' &&
+        psql -h postgres -U postgres -c 'GRANT SELECT ON ALL TABLES IN SCHEMA public TO dbeaver_user;' &&
+        
+        # Настраиваем default privileges
+        psql -h postgres -U postgres -d personal_assistant -c 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO personal_assistant_readonly;' &&
+        psql -h postgres -U postgres -d personal_assistant -c 'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO dbeaver_user;' &&
+        
+        echo '✅ Database initialized with secure passwords!'
+      "
+    networks:
+      - personal-assistant-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: personal-assistant-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "6379:6379"
+    networks:
+      - personal-assistant-network
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: personal-assistant-ollama
+    ports:
+      - "11435:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    networks:
+      - personal-assistant-network
+
+networks:
+  personal-assistant-network:
+    driver: bridge

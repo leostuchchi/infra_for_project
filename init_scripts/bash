@@ -1,0 +1,190 @@
+#!/bin/bash
+
+# Сгенерируйте пароли
+openssl rand -base64 32 > .db_password
+openssl rand -base64 32 > .postgres_password
+openssl rand -base64 24 > .redis_password
+
+# Или сгенерируйте командой:
+echo "DB_PASSWORD=$(openssl rand -base64 32)" >> .env
+
+# Основные команды
+make up         # Запуск сервисов
+make down       # Остановка сервисов
+make logs       # Просмотр логов
+make psql       # Подключение к БД
+make restart    # Перезапуск
+
+# Администрирование
+make init       # Инициализация БД
+make backup     # Создание бэкапа
+make validate   # Валидация SQL
+make health     # Проверка здоровья
+
+# Очистка
+make clean      # Полная очистка
+
+make status     # Статус сервисов
+make health     # Проверка здоровья
+docker stats    # Использование ресурсов
+
+# Проверка логов
+make logs
+
+# Проверка подключения
+make health
+
+# Валидация схемы
+make validate
+
+# Полная переустановка
+make clean
+make setup
+make up
+
+# Только инициализация
+docker-compose --profile init up init-db
+
+# С админкой
+docker-compose --profile admin up -d
+
+# Основные сервисы
+docker-compose up -d
+
+# Валидация SQL перед запуском
+make validate
+
+# Проверка здоровья сервисов
+make health
+
+# Полная установка
+make setup
+
+# Только инициализация БД
+make init
+
+# Проверка SQL скриптов
+cd init_scripts && make validate
+
+# Запуск с перезагрузкой
+docker-compose --profile development up -d
+
+# Тестирование БД
+cd init_scripts && make test
+
+# Проверка подключения
+docker exec personal-assistant-postgres psql -U personal_assistant_app -d personal_assistant -c "\dt"
+
+# Проверка партиций
+docker exec personal-assistant-postgres psql -U personal_assistant_app -d personal_assistant -c "SELECT schemaname, tablename FROM pg_tables WHERE tablename LIKE '%_y%';"
+
+# Проверка ролей
+docker exec personal-assistant-postgres psql -U postgres -d personal_assistant -c "\du"
+
+# Конфигурация
+BACKUP_DIR="/backups"
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILE="$BACKUP_DIR/backup_$DATE.sql.gz"
+
+# Создание бэкапа
+echo "Creating backup: $BACKUP_FILE"
+pg_dump -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" --no-password | gzip > "$BACKUP_FILE"
+
+# Проверка результата
+if [ $? -eq 0 ]; then
+    echo "✅ Backup created successfully: $BACKUP_FILE"
+    
+    # Удаление старых бэкапов (храним 30 дней)
+    find "$BACKUP_DIR" -name "backup_*.sql.gz" -mtime +30 -delete
+    echo "✅ Old backups cleaned"
+    
+    # Отправка уведомления (опционально)
+    # curl -X POST -H "Content-Type: application/json" \
+    #   -d '{"text":"Backup completed successfully"}' \
+    #   https://hooks.slack.com/services/...
+else
+    echo "❌ Backup failed!"
+    exit 1
+fi
+
+# Создаем директорию для моделей
+mkdir -p models
+
+# Файл моделей
+cat > models/README.md << 'EOF'
+# Ollama Models
+
+Place your Ollama models here:
+
+1. mistral:7b - для рекомендаций
+2. llama2:13b - для анализа текста
+3. codellama:7b - для программирования
+
+Download with:
+docker-compose exec ollama ollama pull mistral
+EOF
+
+# Клонируйте репозиторий
+git clone <your-repo>
+cd personal-assistant
+
+# Создайте необходимые директории
+mkdir -p data/backups data/postgres data/redis data/ollama
+
+# Настройте переменные окружения
+cp .env.example .env
+# Отредактируйте .env при необходимости
+
+# Первый запуск с инициализацией БД
+make setup
+
+# Запуск всех сервисов
+make up
+
+# Проверка статуса
+make status
+
+# Только основное (по умолчанию)
+docker-compose up -d
+
+# С админкой и мониторингом
+docker-compose --profile admin up -d
+
+# Только для разработки (с авто-перезагрузкой)
+docker-compose --profile development up -d
+
+# Полный стек (все сервисы)
+docker-compose --profile full up -d
+
+PostgreSQL	localhost:5432	5432	pa_admin/Admin_Pass_123!
+Redis	localhost:6379	6379	-
+Ollama	localhost:11434	11434	-
+PgAdmin	http://localhost:5050	5050	admin@personalassistant.com/Admin123!
+Redis Insight	http://localhost:8001	8001	-
+
+
+# Тест подключения к PostgreSQL
+docker-compose exec postgres pg_isready -U pa_admin
+
+# Тест подключения к Redis
+docker-compose exec redis redis-cli ping
+
+# Тест подключения к Ollama
+curl http://localhost:11434/api/tags
+
+# Тест создания пользователя
+docker-compose exec postgres psql -U pa_admin -d personal_assistant -c \
+  "INSERT INTO users (telegram_id) VALUES (123456789) RETURNING id;"
+  
+  
+# Просмотр логов
+make logs
+
+# Мониторинг ресурсов
+docker stats
+
+# Проверка БД
+docker-compose exec postgres psql -U pa_admin -d personal_assistant -c \
+  "SELECT * FROM user_monitoring LIMIT 5;"
+  
+  

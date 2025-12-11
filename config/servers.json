@@ -1,0 +1,26 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Personal Assistant DB",
+      "Group": "Personal Assistant",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "personal_assistant",
+      "Username": "personal_assistant_app",
+      "SSLMode": "prefer",
+      "PassFile": "/pgadmin4/.pgpass",
+      "Comment": "Auto-configured for Personal Assistant"
+    },
+    "2": {
+      "Name": "Personal Assistant (Readonly)",
+      "Group": "Personal Assistant",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "personal_assistant",
+      "Username": "personal_assistant_readonly",
+      "SSLMode": "prefer",
+      "PassFile": "/pgadmin4/.pgpass",
+      "Comment": "Readonly access for monitoring"
+    }
+  }
+}
