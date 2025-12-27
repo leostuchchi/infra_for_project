@@ -1,0 +1,87 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: pa-postgres
+    ports:                           
+    - "5432:5432"  
+    environment:
+      POSTGRES_DB: personalassistant
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgrespassword
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initscripts:/docker-entrypoint-initdb.d:ro
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    secrets:
+      - postgrespassword
+    networks:
+      - pa-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d personalassistant"]
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+  
+  
+  cron-backup:
+    image: postgres:15-alpine
+    container_name: pa-backup
+    command: >
+      sh -c "
+        echo '0 3 * * * /backup.sh' > /etc/crontabs/root &&
+        crond -f
+      "
+    volumes:
+      - ./scripts/backup-db.sh:/backup.sh:ro
+      - ./backups:/backups
+    environment:
+      PGPASSWORD_FILE: /run/secrets/postgrespassword
+    secrets:
+      - postgrespassword
+    networks: [pa-net]
+    depends_on:
+      - postgres
+
+  
+  
+  app-api:
+    build: ./app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://personal_assistant_app:pass@postgres:5432/personalassistant
+    networks:
+      - pa-net
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./monitoring/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: X-WEBAUTH-USER
+      GF_SECURITY_DISABLE_LOGIN_FORM: "true"
+    networks:
+      - pa-net
+    ports:
+      - "3001:3000"
+
+volumes:
+  pgdata:
+  grafana_data:
+
+secrets:
+  postgrespassword:
+    file: ./docker-secrets/postgrespassword.txt
+
+networks:
+  pa-net:
+  
+  
+

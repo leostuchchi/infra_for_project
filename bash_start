@@ -24,3 +24,34 @@ grep 'DB_PASSWORD=' .env
 
 # Запуск всех сервисов + мониторинг
 make up-dev
+
+# 1. Создать скрипты
+mkdir -p scripts backups
+# Скопировать скрипты выше
+
+chmod +x scripts/*.sh
+
+# 2. Добавить cron-backup в docker-compose.yml
+
+# 3. Автоматизация
+make cron-setup
+
+# 4. Первый тест
+make daily-backup
+ls -lh backups/  # full-backup-YYYYMMDD.sql.gz
+
+make up              # 🚀 Всё за 2 минуты
+make status          # 📊 Статус + URL'ы
+make validate        # 🔍 16+ таблиц ✓
+make backup          # 💾 Ручной бэкап
+make cron-setup      # ⏰ Автоматизация
+
+
+"
+
+3. Синхронизировать файл секрета
+
+bash
+echo "mypassword123" > docker-secrets/postgrespassword.txt
+chmod 600 docker-secrets/postgrespassword.txt
+

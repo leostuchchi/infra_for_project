@@ -1,0 +1,23 @@
+.PHONY: secrets up validate
+
+secrets:
+	@mkdir -p docker-secrets && chmod 700 docker-secrets
+	@openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 24 > docker-secrets/postgrespassword.txt
+	@openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 24 > docker-secrets/app_password.txt
+	@chmod 600 docker-secrets/*
+	@echo "✅ Secrets: postgrespassword.txt, app_password.txt"
+
+set-app-password:
+	@docker exec pa-postgres psql -U postgres -d personalassistant -c \
+		"ALTER ROLE personal_assistant_app WITH PASSWORD '$$(cat docker-secrets/app_password.txt)';"
+	@echo "✅ App role password installed"
+
+up: secrets
+	docker compose -f docker-compose.prod.yml up -d postgres
+	@sleep 20
+	@make set-app-password
+	docker compose -f docker-compose.prod.yml up -d
+
+validate:
+	@PGPASSWORD=$$(cat docker-secrets/postgrespassword.txt) psql -h localhost -U postgres -d personalassistant -c "\dt" | grep -E "(users|natal_charts|recommendations)" || echo "❌ Tables missing"
+

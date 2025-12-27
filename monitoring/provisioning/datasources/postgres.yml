@@ -1,0 +1,11 @@
+apiVersion: 1
+datasources:
+  - name: PostgreSQL
+    type: postgres
+    url: postgres:5432
+    database: personal_assistant
+    user: personal_assistant_app
+    secureJsonData:
+      password: "${DB_PASSWORD}"
+    jsonData:
+      sslmode: disable
