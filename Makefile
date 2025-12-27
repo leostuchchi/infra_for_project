@@ -44,8 +44,15 @@ init-db:
 	docker compose up -d postgres
 	@sleep 25
 	docker exec pa-postgres psql -U postgres -d personalassistant -f /docker-entrypoint-initdb.d/init_db.sql || true
-	docker exec pa-postgres psql -U postgres -d personalassistant -c "ALTER ROLE personal_assistant_app WITH PASSWORD '$$(cat docker-secrets/app_password.txt)'" || true
-	@echo "${GREEN}✅ Database ready (16+ tables)${RESET}"
+	
+	POSTGRES_PASS=$$(cat docker-secrets/postgrespassword.txt)
+	APP_PASS=$$(cat docker-secrets/app_password.txt)
+	
+	# ✅ ЭКРАНИРОВАНИЕ для docker exec!
+	docker exec pa-postgres psql -U postgres -c $$'ALTER ROLE postgres WITH PASSWORD '\''$$POSTGRES_PASS'\'';' || true
+	docker exec pa-postgres psql -U postgres -c $$'ALTER ROLE personal_assistant_app WITH PASSWORD '\''$$APP_PASS'\'';' || true
+	
+	@echo "${GREEN}✅ Passwords: $$(echo $$POSTGRES_PASS | cut -c1-8)...${RESET}"
 
 # ============================================
 # 4. ВАЛИДАЦИЯ (БД + сервисы)
@@ -56,6 +63,13 @@ validate:
 	@PGPASSWORD=$$(cat docker-secrets/postgrespassword.txt) psql -h localhost -U postgres -d personalassistant -tAc "SELECT COUNT(*) FROM pg_tables WHERE schemaname='public';" | grep -q "16" && echo "${GREEN}✅ 16+ tables OK${RESET}" || echo "${RED}❌ Tables missing${RESET}"
 	@docker compose ps grafana | grep -q "Up" && echo "${GREEN}✅ Grafana: localhost:3000${RESET}" || echo "${YELLOW}⚠️  Grafana not ready${RESET}"
 	@curl -s http://localhost:8000/docs > /dev/null && echo "${GREEN}✅ FastAPI: localhost:8000${RESET}" || echo "${YELLOW}⚠️  FastAPI not ready${RESET}"
+
+# ============================================
+# 🛑 БЕЗОПАСНАЯ ОСТАНОВКА (БД СОХРАНЯЕТСЯ!)
+# ============================================
+down:
+	docker compose down
+	@echo "${GREEN}✅ Services stopped (DB preserved)${RESET}"
 
 # ============================================
 # 5. БЭКАПЫ (ежедневно 3:00)

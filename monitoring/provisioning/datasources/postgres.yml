@@ -3,9 +3,11 @@ datasources:
   - name: PostgreSQL
     type: postgres
     url: postgres:5432
-    database: personal_assistant
-    user: personal_assistant_app
+    database: personalassistant
+    user: postgres  
     secureJsonData:
-      password: "${DB_PASSWORD}"
+      password: "Pa$$w0rd123!"  # Временный для Grafana
     jsonData:
       sslmode: disable
+    isDefault: true
+

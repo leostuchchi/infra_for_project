@@ -1,27 +1,19 @@
 #!/bin/bash
-echo "🔐 Generating Docker secrets..."
+echo "🔐 Setting app password..."
 
-# Создаём папку (если нет)
+# Создать секрет (один файл!)
 mkdir -p docker-secrets && chmod 700 docker-secrets
+openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 24 > docker-secrets/postgrespassword.txt
+chmod 600 docker-secrets/postgrespassword.txt
 
-# Только 2 пароля (Postgres superuser + app роль)
-POSTGRES_PASS=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 24)
-APP_PASS=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 24)
-
-# Сохраняем в Docker secrets формат
-echo "$POSTGRES_PASS" > docker-secrets/postgrespassword.txt
-echo "$APP_PASS"     > docker-secrets/app_password.txt
-
-# Права доступа
-chmod 600 docker-secrets/*
-
-# Устанавливаем пароль роли (если postgres запущен)
+# Установить в БД
 if docker ps | grep -q pa-postgres; then
-    docker exec pa-postgres psql -U postgres -d personalassistant -c \
-        "ALTER ROLE personal_assistant_app WITH PASSWORD '$APP_PASS';"
-    echo "✅ App role password set"
+  PGPASSWORD=$(cat docker-secrets/postgrespassword.txt) \
+  docker exec pa-postgres psql -U postgres -d personalassistant -c "
+    ALTER ROLE postgres WITH PASSWORD '$(cat docker-secrets/postgrespassword.txt)';
+    ALTER ROLE personal_assistant_app WITH PASSWORD '$(cat docker-secrets/postgrespassword.txt)';
+  "
 fi
 
-echo "✅ Docker secrets ready: postgrespassword.txt, app_password.txt"
-echo "⚠️  НЕТ .env файла! Используйте docker-compose.prod.yml secrets."
+echo "✅ Password: $(cat docker-secrets/postgrespassword.txt)"
 
