@@ -17,18 +17,11 @@ backup/
 tmp/
 *.tmp
 
-
-.env
-data/
-docker-secrets/
-
 # Data
-data/
 *.log
 *.bak
 
 # Environment
-.env
 .env.local
 
 # IDE
@@ -46,7 +39,6 @@ backups/*.sql.gz
 !backups/.gitkeep
 
 # Temp
-tmp/
 temp/
 
 # Python

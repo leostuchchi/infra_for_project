@@ -1,0 +1,97 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: pa-postgres
+    ports:
+      - "5432:5432"  
+    environment:
+      POSTGRES_DB: personalassistant
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgrespassword
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./initscripts:/docker-entrypoint-initdb.d:ro
+      - ./config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    secrets:
+      - postgrespassword
+    networks:
+      - pa-net  
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d personalassistant"]
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+
+  app-api:
+    build: ./app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://personal_assistant_app:$${APP_PASSWORD}@postgres:5432/personalassistant"
+    networks:
+      - pa-net
+    secrets:
+      - apppassword
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: pa-grafana
+    ports:
+      - "3001:3000"  
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana.ini:/etc/grafana/grafana.ini:ro
+      - ./monitoring/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_AUTH_PROXY_ENABLED=true
+      - GF_AUTH_PROXY_HEADER_NAME=X-WEBAUTH-USER
+      - GF_SECURITY_DISABLE_LOGIN_FORM=true
+      - GF_DATABASE_TYPE=postgres  
+      - GF_DATABASE_HOST=postgres:5432
+      - GF_DATABASE_NAME=personalassistant
+      - GF_DATABASE_USER=postgres
+      - GF_DATABASE_PASSWORD_FILE=/run/secrets/postgrespassword
+    secrets:
+      - postgrespassword
+    networks:
+      - pa-net
+    depends_on:
+      - postgres
+
+  cron-backup:
+    image: postgres:15-alpine
+    container_name: pa-backup
+    command: >
+      sh -c "
+        echo '0 3 * * * /backup.sh' > /etc/crontabs/root &&
+        crond -f
+      "
+    volumes:
+      - ./scripts/backup-db.sh:/backup.sh:ro
+      - ./backups:/backups
+    environment:
+      PGPASSWORD_FILE: /run/secrets/postgrespassword
+    secrets:
+      - postgrespassword
+    networks:
+      - pa-net
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata: {}
+  grafana_data: {}
+
+secrets:
+  postgrespassword:
+    file: ./docker-secrets/postgrespassword.txt
+  apppassword:
+    file: ./docker-secrets/app_password.txt
+
+networks:
+  pa-net:
+    driver: bridge
